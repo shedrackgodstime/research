@@ -2,7 +2,7 @@
 title: "What If We Just Put Files in the Database?"
 summary: First session - starting from "files are bytes" and experimenting with base64, encryption, and compression
 status: active
-portfolio: false
+portfolio: true
 started: 2026-05
 tags: [bytes, filesystems, encryption, compression, base64]
 ---
