@@ -1,7 +1,7 @@
 ---
 title: "What If We Just Put Files in the Database?"
 summary: First session — starting from "files are bytes" and experimenting with base64, encryption, and compression
-status: draft
+status: active
 portfolio: false
 started: 2026-05
 tags: [bytes, filesystems, encryption, compression, base64]
@@ -61,6 +61,12 @@ Then I asked about compression: can a string be squished smaller and still come 
 Tried `gzip` on the base64 text — went from 301KB to 228KB. Tried it on the raw PNG — barely budged (PNGs are already compressed). Tried it on the encrypted file — didn't compress at all (encrypted data looks random, no patterns for the compressor to find).
 
 That last part clicked: **compress before encrypt, not after.**
+
+## Current State
+
+The topic is active. The first session established the basic pipeline and the
+main question now is how these byte-level ideas map to real storage systems,
+compression internals, and encryption modes.
 
 ## What I Still Want to Understand
 

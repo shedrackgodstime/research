@@ -4,4 +4,4 @@ This file is the top-level index for research topics in this repository.
 
 | Topic | Status | Portfolio | Started | Summary |
 | --- | --- | --- | --- | --- |
-| [files-are-just-bytes](./bytes-all-the-way-down/) | active | false | 2026-05 | Files as raw bytes — storage as text, base64, encryption, and compression |
+| [What If We Just Put Files in the Database?](./bytes-all-the-way-down/) | active | no | 2026-05 | First session exploring files as bytes, base64, encryption, and compression |
