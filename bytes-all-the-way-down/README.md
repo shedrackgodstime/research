@@ -1,7 +1,7 @@
 ---
 title: "What If We Just Put Files in the Database?"
-summary: A question-driven exploration of files as bytes — storage, encryption, compression, and why the line between files and databases is thinner than it looks
-status: active
+summary: First session — starting from "files are bytes" and experimenting with base64, encryption, and compression
+status: draft
 portfolio: false
 started: 2026-05
 tags: [bytes, filesystems, encryption, compression, base64]
@@ -9,146 +9,85 @@ tags: [bytes, filesystems, encryption, compression, base64]
 
 # What If We Just Put Files in the Database?
 
-## Summary
+## Where It Started
 
-This started with a simple question: *why do we need separate file storage? Can't we just save files in the database?*
+I asked: *why do people use file storage (S3, etc.) instead of just putting files in the database?*
 
-That sounds naive until you realize a file is just bytes, and a database column can hold bytes. So what actually stops us?
+Got told it's about performance and scale, not about whether it's possible. That made me curious — can a file actually live as text in a database? So I started poking around.
 
-This is the thread that got pulled.
+## Session 1 — What I Did
 
-## The Question
+I had a PNG file in an empty repo. I didn't know where to start.
 
-> "Why not save files in a database instead of having separate file storage? Isn't that more costly?"
+First thing I learned: `xxd` shows the raw bytes of a file.
 
-Short answer: you can. People do it all the time.
-
-```sql
-CREATE TABLE files (
-    id SERIAL PRIMARY KEY,
-    data BYTEA
-);
+```
+xxd Mexico_coat_of_arms.png
 ```
 
-The real answer is about *tradeoffs* — performance, backup size, query contention, CDN integration. But none of that invalidates the core insight: **a file is just bytes, and a database stores bytes.**
+Saw the PNG magic bytes: `89 50 4e 47...` — that spells "PNG" in ASCII. Never noticed that before.
 
-Which led to the next question.
+Then I asked: if a file is just bytes, and bytes can be turned into text, can I store a file as a text string and get it back?
 
-## Can We Store a File as Text?
-
-If a database stores text, and a file is bytes, can we turn bytes into text and back?
+Someone showed me `base64`:
 
 ```bash
-# Take a real PNG file
-# Store it as text (like a DB text column would)
 base64 Mexico_coat_of_arms.png > portrait_as_text.txt
-
-# Convert it back
-base64 -d portrait_as_text.txt > reconstructed.png
-
-# Are they the same?
-sha256sum Mexico_coat_of_arms.png reconstructed.png
 ```
 
-```
-4e5fbe0d55aa4be76429a8a26876132667f572014f408ae8e16972196a8151cd  original.png
-4e5fbe0d55aa4be76429a8a26876132667f572014f408ae8e16972196a8151cd  reconstructed.png
-```
-
-**Identical.** The file lived as a text string, then came back byte-perfect.
-
-## But What If the Database Gets Leaked?
-
-If we're storing file contents directly — even as text — a DB dump means leaked files.
-
-> "Can we encrypt the contents before putting them in the DB?"
+That turned the whole image into readable ASCII characters. I opened it — looked like random letters and numbers. Then reversed it:
 
 ```bash
-# Encrypt the file
+base64 -d portrait_as_text.txt > reconstructed.png
+```
+
+Checked if they were identical with `sha256sum` — both had the exact same hash. So the bytes survived a round trip through plain text. That was interesting.
+
+Next I wondered: if I'm putting file bytes into a database, what if someone steals the database? Can I encrypt the file first, then store the encrypted version as text?
+
+```bash
 openssl enc -aes-256-cbc -salt \
     -in Mexico_coat_of_arms.png \
     -out encrypted.enc \
     -pass pass:"supersecret"
 
-# Store as text (what the DB would hold)
 base64 encrypted.enc > encrypted_as_text.txt
-
-# Reverse later
-base64 -d encrypted_as_text.txt > encrypted_from_db.enc
-openssl enc -aes-256-cbc -d \
-    -in encrypted_from_db.enc \
-    -out decrypted.png \
-    -pass pass:"supersecret"
-
-sha256sum original.png decrypted.png  # match
 ```
 
-The encrypted text looks like gibberish. Even with a full DB dump, the files are worthless without the key.
+Compared the original base64 text vs the encrypted base64 text — the encrypted version looked completely different. No structure, no PNG header, nothing. Decrypted it back and got the same hash again.
 
-## Can We Squeeze It Smaller?
+Then I asked about compression: can a string be squished smaller and still come back exactly the same?
 
-> "Can a string be compressed? Like, a long string into a short one, and get back the exact same thing?"
+Tried `gzip` on the base64 text — went from 301KB to 228KB. Tried it on the raw PNG — barely budged (PNGs are already compressed). Tried it on the encrypted file — didn't compress at all (encrypted data looks random, no patterns for the compressor to find).
 
-Yes — that's lossless compression. gzip, zlib, deflate, LZMA. They work by finding repeated patterns and replacing them with shorter references.
+That last part clicked: **compress before encrypt, not after.**
 
-But there's a trap:
+## What I Still Want to Understand
 
-| Data | Before | After gzip | What happened |
-|------|--------|------------|---------------|
-| Raw encrypted bytes | 223K | 223K | Grew — encryption looks random, no patterns |
-| Base64 text | 301K | 228K | Compressed — limited charset has patterns |
-| Original PNG | 223K | 222K | Barely — PNG is already compressed |
+- How bytes actually work at the bit level
+- How compression algorithms find patterns
+- How different encryption modes (CBC, GCM, CTR) differ at the byte level
+- Maybe build a tiny system that stores files as text in a database
+- Everything else I'll discover as I go
 
-**The rule:** compress *before* encrypting. Encryption destroys patterns. Compression needs patterns.
-
-```
-Correct:  File → Compress → Encrypt → Store
-Wrong:    File → Encrypt → Compress → Store  ← wastes effort
-```
-
-## What It Adds Up To
-
-A single pipeline covers all of it:
-
-```
-Binary file → gzip compress → AES-256 encrypt → base64 encode → store as text in DB
-```
-
-Reverse to retrieve. The file is compressed, encrypted, and stored where no filesystem expects it. And it works.
-
-The line between "file storage" and "database" is thinner than it looks. At the bottom, everything is bytes.
-
-## Next Steps (For Later)
-
-- Deeper into binary: bits, bytes, endianness, how integers and floats actually look in memory
-- How compression algorithms work under the hood (Huffman, LZ77)
-- Encryption modes (CBC, GCM, CTR) and how they transform bytes
-- Building a minimal file-in-DB system from scratch
-
-## Commands Reference
+## Raw Commands From This Session
 
 ```bash
-# View raw hex
 xxd file.png
-
-# Store file as text / reconstruct
 base64 file.png > text.txt
 base64 -d text.txt > copy.png
+sha256sum file1 file2
 
-# Encrypt / decrypt (AES-256-CBC)
 openssl enc -aes-256-cbc -salt -in file.png -out file.enc -pass pass:"key"
 openssl enc -aes-256-cbc -d -in file.enc -out file.png -pass pass:"key"
 
-# Verify identity
-sha256sum file1 file2
-
-# Compress / decompress
 gzip -c file > file.gz
 gunzip -c file.gz > file
 ```
 
-## References
+## References (So Far)
 
-- [PNG Specification — magic bytes explained](http://www.libpng.org/pub/png/spec/)
-- OpenSSL `enc` man page
-- Base64 encoding scheme (RFC 4648)
+- `man xxd`
+- `man base64`
+- `man openssl`
+- PNG spec — magic bytes section
